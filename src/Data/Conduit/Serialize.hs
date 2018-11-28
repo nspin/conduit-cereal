@@ -6,13 +6,22 @@ module Data.Conduit.Serialize
   , sourcePut
   , conduitPut
   , GetFailureMessage
+  , GetException
+  , sinkGet'
+  , sinkGet''
+  , conduitGet'
+  , conduitGet''
   ) where
 
+import Control.Exception (Exception, throw)
+import Control.Monad ((>=>))
+import Control.Monad.Catch (MonadThrow, throwM)
 import Data.ByteString (ByteString)
 import Data.Conduit
 import Data.Conduit.Combinators (awaitNonNull, sourceLazy)
 import Data.NonNull (toNullable)
 import Data.Serialize
+import Data.Typeable (Typeable)
 
 type GetFailureMessage = String
 
@@ -72,3 +81,21 @@ sourcePut = sourceLazy . runPutLazy
 
 conduitPut :: Monad m => Putter a -> ConduitT a ByteString m ()
 conduitPut f = awaitForever (sourcePut . f)
+
+-- Exceptions
+
+data GetException = GetException GetFailureMessage deriving (Show, Typeable)
+
+instance Exception GetException
+
+sinkGet' :: MonadThrow m => Get r -> ConduitT ByteString o m r
+sinkGet' = sinkGet >=> either (throwM . GetException) return
+
+sinkGet'' :: MonadThrow m => Get r -> ConduitT ByteString o m r
+sinkGet'' = sinkGet >=> either (throw . GetException) return
+
+conduitGet' :: MonadThrow m => Monad m => Get r -> ConduitT ByteString r m ()
+conduitGet' = conduitGet >=> maybe (return ()) (throwM . GetException)
+
+conduitGet'' :: MonadThrow m => Monad m => Get r -> ConduitT ByteString r m ()
+conduitGet'' = conduitGet >=> maybe (return ()) (throw . GetException)
